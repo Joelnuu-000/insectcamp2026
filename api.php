@@ -1,18 +1,9 @@
 <?php
-// api.php
 require 'db.php';
 
 $action = $_GET['action'] ?? '';
 
-// 處理關主發送的 Delay 通知
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'notify') {
-    $data = json_decode(file_get_contents('php://input'), true);
-    $stmt = $pdo->prepare("INSERT INTO notifications (sender, target_squad, message) VALUES (?, ?, ?)");
-    $stmt->execute([$data['sender'], $data['target_squad'], $data['message']]);
-    echo json_encode(['status' => 'success']);
-    exit;
-}
-// 處理前端請求：獲取小隊當前或下一關的任務
+// --- 1. 處理前端請求：獲取小隊當前或下一關的任務 ---
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_schedule') {
     $squad_id = $_GET['squad_id'] ?? '';
     // 如果有傳入模擬時間就使用模擬時間，否則使用伺服器當前時間
@@ -27,6 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_schedule') {
         ORDER BY s.start_time ASC
         LIMIT 1
     ");
+    // 注意：這裡的 "第X小隊" 必須與你 seed_games.php 寫入的格式完全一致
     $stmt->execute(["第" . $squad_id . "小隊", $current_time]);
     $task = $stmt->fetch(PDO::FETCH_ASSOC);
     
@@ -37,16 +29,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_schedule') {
     }
     exit;
 }
-// SSE 端點：持續推播最新通知
+
+// --- 2. 處理關主發送的 Delay 通知 ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'notify') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    $stmt = $pdo->prepare("INSERT INTO notifications (sender, target_squad, message) VALUES (?, ?, ?)");
+    $stmt->execute([$data['sender'], $data['target_squad'], $data['message']]);
+    echo json_encode(['status' => 'success']);
+    exit;
+}
+
+// --- 3. SSE 端點：持續推播最新通知 ---
 if ($action === 'sse') {
     header('Content-Type: text/event-stream');
     header('Cache-Control: no-cache');
     header('Connection: keep-alive');
     
-    // 獲取最後發送的通知 ID 以避免重複推播
+    // 獲取最後發送的通知 ID
     $last_id = isset($_SERVER["HTTP_LAST_EVENT_ID"]) ? intval($_SERVER["HTTP_LAST_EVENT_ID"]) : 0;
 
-    // 為避免佔用過多連線資源，使用簡單的輪詢檢查資料庫 (配合 Railway 環境)
     while (true) {
         $stmt = $pdo->prepare("SELECT * FROM notifications WHERE id > ? ORDER BY id ASC");
         $stmt->execute([$last_id]);
@@ -62,10 +63,7 @@ if ($action === 'sse') {
             flush();
         }
         
-        // 暫停 2 秒再查，降低 CPU 負載
-        sleep(2); 
-        
-        // 防止腳本無限執行導致伺服器崩潰 (Railway 預設 timeout 保護)
+        sleep(2); // 降低 CPU 負載
         if (connection_aborted()) break;
     }
     exit;
