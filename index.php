@@ -23,8 +23,18 @@ $squads = range(1, 8);
     <div id="app" class="max-w-md mx-auto bg-white rounded-xl shadow-md overflow-hidden p-6">
         <h1 class="text-2xl font-bold mb-4 text-center text-indigo-600">營隊即時連線系統</h1>
         
-        <select id="role-selector" class="w-full p-2 border rounded mb-4" onchange="switchView(this.value, this.options[this.selectedIndex].text)">
-            <option value="">請選擇身份...</option>
+        <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm shadow-inner">
+            <label class="font-bold text-blue-800 block mb-1">⏳ 系統時間模擬 (測試用)</label>
+            <div class="flex gap-2">
+                <input type="datetime-local" id="sim-time" value="2026-07-06T10:15" class="p-1 border border-blue-300 rounded w-full bg-white">
+                <button onclick="fetchSchedule()" class="bg-blue-600 text-white px-4 py-1 rounded hover:bg-blue-700 transition font-medium">刷新</button>
+            </div>
+        </div>
+        
+        <hr class="my-4 border-gray-200">
+
+        <select id="role-selector" class="w-full p-2 border border-gray-300 rounded-lg mb-4 bg-gray-50 text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500" onchange="switchView(this.value, this.options[this.selectedIndex].text)">
+            <option value="">請選擇您的身份...</option>
             
             <optgroup label="🏕️ 小隊輔">
                 <?php foreach($squads as $s): ?>
@@ -38,94 +48,181 @@ $squads = range(1, 8);
                 <?php endforeach; ?>
             </optgroup>
             
-            <optgroup label="📡 場控">
+            <optgroup label="📡 總部">
                 <option value="coordinator_0">場控總部</option>
             </optgroup>
         </select>
 
         <div id="view-squad" class="hidden">
-            <h2 class="text-xl font-bold text-blue-700" id="squad-title">小隊任務</h2>
-            <p class="text-sm text-gray-500 mb-2" id="squad-next-station">資料載入中...</p>
-            <div id="map" class="h-64 w-full bg-gray-200 rounded mb-4"></div>
-            <div id="squad-notifications" class="p-3 bg-red-100 text-red-700 rounded text-sm hidden"></div>
+            <div class="bg-blue-600 text-white p-3 rounded-t-lg">
+                <h2 class="text-xl font-bold" id="squad-title">小隊任務</h2>
+            </div>
+            <div class="border border-blue-200 border-t-0 rounded-b-lg p-3 mb-4 bg-blue-50">
+                <p class="text-base text-gray-700 leading-relaxed" id="squad-next-station">請點擊上方刷新獲取任務...</p>
+            </div>
+            
+            <div id="map" class="h-64 w-full bg-gray-200 rounded-lg shadow-sm border border-gray-300 mb-4 z-0"></div>
+            <div id="squad-notifications" class="p-3 bg-red-100 border-l-4 border-red-500 text-red-700 rounded text-sm hidden font-medium shadow-sm"></div>
         </div>
 
         <div id="view-station" class="hidden">
-            <h2 class="text-xl font-bold text-green-700 mb-2" id="station-title">關主控制台</h2>
-            <p class="mb-4 text-gray-600" id="station-incoming">預計接待：載入中...</p>
-            <button onclick="notifyDelay()" class="w-full bg-yellow-500 text-white p-3 rounded-lg font-bold shadow hover:bg-yellow-600 transition">
-                ⚠️ 通知：本關卡 Delay 5 分鐘
+            <div class="bg-green-600 text-white p-3 rounded-t-lg">
+                <h2 class="text-xl font-bold" id="station-title">關主控制台</h2>
+            </div>
+            <div class="border border-green-200 border-t-0 rounded-b-lg p-4 mb-4 bg-green-50 text-center">
+                <p class="text-lg font-medium text-green-800" id="station-incoming">準備接待小隊中...</p>
+            </div>
+            
+            <button onclick="notifyDelay()" class="w-full bg-yellow-500 text-white p-3 rounded-lg font-bold shadow hover:bg-yellow-600 transition flex justify-center items-center gap-2">
+                <span>⚠️</span> 回報本關卡延遲 5 分鐘
             </button>
         </div>
 
         <div id="view-coordinator" class="hidden">
-            <h2 class="text-xl font-bold text-purple-700 mb-2">場控全局監控</h2>
-            <ul id="global-logs" class="text-sm space-y-2 h-64 overflow-y-auto border p-2 rounded bg-gray-50"></ul>
+            <div class="bg-purple-600 text-white p-3 rounded-t-lg">
+                <h2 class="text-xl font-bold">全局監控日誌</h2>
+            </div>
+            <ul id="global-logs" class="text-sm space-y-2 h-64 overflow-y-auto border border-purple-200 border-t-0 p-3 rounded-b-lg bg-gray-50 shadow-inner">
+                <li class="text-gray-400 text-center italic mt-4">等待系統通知...</li>
+            </ul>
         </div>
     </div>
 
     <script>
         let map = null;
+        let marker = null;
         let currentIdentity = { type: '', id: '', name: '' };
 
-        // 視角切換邏輯 (支援動態 ID)
+        // 視角切換與初始化
         function switchView(roleValue, roleText) {
+            // 隱藏所有視圖
             document.querySelectorAll('#app > div[id^="view-"]').forEach(el => el.classList.add('hidden'));
-            if (!roleValue) return;
+            
+            if (!roleValue) {
+                currentIdentity = { type: '', id: '', name: '' };
+                return;
+            }
 
-            // 解析選項 (例如 "squad_3" 拆成 type="squad", id="3")
             const [type, id] = roleValue.split('_');
             currentIdentity = { type, id, name: roleText };
 
+            // 顯示對應視圖
             document.getElementById(`view-${type}`).classList.remove('hidden');
 
-            // 更新 UI 標題
             if (type === 'squad') {
-                document.getElementById('squad-title').innerText = roleText + " 任務";
-                // 這裡後續會加上 API 請求，去撈取該小隊現在該去哪一關
+                document.getElementById('squad-title').innerText = roleText;
+                
+                // 延遲初始化地圖以確保 DOM 已經渲染並取得正確寬高
+                if (!map) {
+                    setTimeout(() => {
+                        map = L.map('map').setView([25.017, 121.539], 16); 
+                        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                            attribution: '© OpenStreetMap'
+                        }).addTo(map);
+                        fetchSchedule(); 
+                    }, 100);
+                } else {
+                    fetchSchedule();
+                }
             } else if (type === 'station') {
                 document.getElementById('station-title').innerText = roleText;
-                // 這裡後續會加上 API 請求，去撈取即將到來的小隊
-            }
-
-            // 初始化地圖 (防呆避免重複渲染)
-            if (type === 'squad' && !map) {
-                setTimeout(() => {
-                    map = L.map('map').setView([24.954, 121.514], 15);
-                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                        attribution: '© OpenStreetMap'
-                    }).addTo(map);
-                }, 100);
             }
         }
 
-        // 推播相關邏輯保留...
+        // 呼叫 API 獲取小隊最新任務與座標
+        async function fetchSchedule() {
+            if (currentIdentity.type !== 'squad') return;
+            
+            // 轉換 input[type=datetime-local] 的值為 SQL 支援的 YYYY-MM-DD HH:mm:ss
+            const simTimeInput = document.getElementById('sim-time').value;
+            const formattedTime = simTimeInput.replace('T', ' ') + ':00';
+            
+            try {
+                const response = await fetch(`api.php?action=get_schedule&squad_id=${currentIdentity.id}&time=${formattedTime}`);
+                const result = await response.json();
+                const infoBox = document.getElementById('squad-next-station');
+                
+                if (result.status === 'success') {
+                    const task = result.data;
+                    infoBox.innerHTML = `
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="bg-blue-200 text-blue-800 text-xs px-2 py-1 rounded font-bold">目標</span>
+                            <span class="font-bold text-gray-900">${task.name}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="bg-gray-200 text-gray-700 text-xs px-2 py-1 rounded font-bold">時間</span>
+                            <span class="text-gray-700">${task.start_time.substring(11,16)} ~ ${task.end_time.substring(11,16)}</span>
+                        </div>
+                    `;
+                    
+                    // 若資料庫內有設定該關卡的座標，則更新地圖標記
+                    if (task.lat && task.lng) {
+                        const latLng = [parseFloat(task.lat), parseFloat(task.lng)];
+                        map.setView(latLng, 18);
+                        if (marker) map.removeLayer(marker);
+                        marker = L.marker(latLng).addTo(map)
+                            .bindPopup(`<b class="text-blue-600">${task.name}</b>`).openPopup();
+                    }
+                } else {
+                    infoBox.innerHTML = `<span class="text-red-500 font-medium">${result.message}</span>`;
+                    if (marker) { map.removeLayer(marker); marker = null; }
+                }
+            } catch (error) {
+                console.error("排程讀取失敗:", error);
+                document.getElementById('squad-next-station').innerHTML = `<span class="text-red-500">連線失敗，請確認網路狀態。</span>`;
+            }
+        }
+
+        // 發送延遲推播通知
         async function notifyDelay() {
             if(currentIdentity.type !== 'station') return;
-            await fetch('api.php?action=notify', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    sender: currentIdentity.name,
-                    target_squad: '全體', // 暫時寫死，後續改為動態
-                    message: `${currentIdentity.name} 延遲 5 分鐘，請稍候。`
-                })
-            });
-            alert('已發送 Delay 通知！');
+            
+            try {
+                await fetch('api.php?action=notify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sender: currentIdentity.name,
+                        target_squad: '全體', 
+                        message: `${currentIdentity.name} 現場微調中，請稍候再前往。`
+                    })
+                });
+                alert('已成功發送 Delay 通知給總部與小隊！');
+            } catch (error) {
+                alert('發送失敗，請重試。');
+            }
         }
 
+        // Server-Sent Events (SSE) 監聽器
         const sse = new EventSource('api.php?action=sse');
         sse.onmessage = function(event) {
             const data = JSON.parse(event.data);
+            
+            // 場控視角：渲染所有廣播歷史
             if (currentIdentity.type === 'coordinator') {
                 const logList = document.getElementById('global-logs');
-                logList.innerHTML = `<li class="p-2 bg-white border-l-4 border-red-500 shadow-sm">[${data.created_at}] <b>${data.sender}</b>: ${data.message}</li>` + logList.innerHTML;
+                // 移除預設的「等待通知」字樣
+                if (logList.innerHTML.includes('等待系統通知')) {
+                    logList.innerHTML = '';
+                }
+                const newLog = `
+                    <li class="p-2 bg-white border-l-4 border-red-500 shadow-sm rounded">
+                        <div class="text-xs text-gray-500 mb-1">${data.created_at}</div>
+                        <div><span class="font-bold text-gray-800">${data.sender}</span>: ${data.message}</div>
+                    </li>`;
+                logList.innerHTML = newLog + logList.innerHTML;
             }
+            
+            // 小隊視角：顯示最新的一筆通知
             if (currentIdentity.type === 'squad') {
                 const alertBox = document.getElementById('squad-notifications');
                 alertBox.innerText = `🚨 總部/關主通知：${data.message}`;
                 alertBox.classList.remove('hidden');
             }
+        };
+        
+        sse.onerror = function() {
+            console.error("SSE 連線中斷，系統將嘗試重新連線...");
         };
     </script>
 </body>
