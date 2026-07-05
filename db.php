@@ -1,6 +1,7 @@
 <?php
 // db.php
-$db_file = __DIR__ . '/camp_database.sqlite';
+// 將原本的 __DIR__ . '/camp_database.sqlite' 更改為：
+$db_file = '/app/data/camp_database.sqlite';
 $is_new = !file_exists($db_file);
 
 try {
