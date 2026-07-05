@@ -69,35 +69,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'notify') {
 // ==========================================
 // 4. SSE 端點：持續推播最新通知給前端
 // ==========================================
-if ($action === 'sse') {
-    // 解除 PHP 預設的 30 秒執行限制，防止長連線被強制中斷
-    set_time_limit(0);
+// ==========================================
+// 4. 輪詢端點：獲取最新通知 (取代 SSE)
+// ==========================================
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_notifications') {
+    $last_id = isset($_GET['last_id']) ? intval($_GET['last_id']) : 0;
     
-    header('Content-Type: text/event-stream');
-    header('Cache-Control: no-cache');
-    header('Connection: keep-alive');
+    $stmt = $pdo->prepare("SELECT * FROM notifications WHERE id > ? ORDER BY id ASC");
+    $stmt->execute([$last_id]);
+    $new_notifications = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
-    // 獲取最後發送的通知 ID，避免重複推播
-    $last_id = isset($_SERVER["HTTP_LAST_EVENT_ID"]) ? intval($_SERVER["HTTP_LAST_EVENT_ID"]) : 0;
-
-    while (true) {
-        $stmt = $pdo->prepare("SELECT * FROM notifications WHERE id > ? ORDER BY id ASC");
-        $stmt->execute([$last_id]);
-        $new_notifications = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        if ($new_notifications) {
-            foreach ($new_notifications as $note) {
-                echo "id: " . $note['id'] . "\n";
-                echo "data: " . json_encode($note) . "\n\n";
-                $last_id = $note['id'];
-            }
-            ob_flush();
-            flush();
-        }
-        
-        sleep(2); // 暫停 2 秒降低伺服器 CPU 負載
-        if (connection_aborted()) break; // 若前端關閉網頁則自動結束迴圈
-    }
+    echo json_encode(['status' => 'success', 'data' => $new_notifications]);
     exit;
 }
 ?>

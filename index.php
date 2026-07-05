@@ -92,7 +92,8 @@ $squads = range(1, 8);
         let map = null;
         let marker = null;
         let currentIdentity = { type: '', id: '', name: '' };
-        let currentTargetSquad = '全體'; // 關主預計通知的目標小隊
+        let currentTargetSquad = '全體'; 
+        let lastNotificationId = 0; // 記錄前端目前收到的最新通知 ID
 
         // ================= UI 視角切換與初始化 =================
         function switchView(roleValue, roleText) {
@@ -111,7 +112,6 @@ $squads = range(1, 8);
             if (type === 'squad') {
                 document.getElementById('squad-title').innerText = roleText;
                 
-                // 確保 DOM 渲染完畢後再初始化地圖
                 if (!map) {
                     setTimeout(() => {
                         map = L.map('map').setView([25.017, 121.539], 16); 
@@ -138,7 +138,6 @@ $squads = range(1, 8);
             
             try {
                 if (currentIdentity.type === 'squad') {
-                    // --- 小隊輔視角資料 ---
                     const response = await fetch(`api.php?action=get_schedule&squad_id=${currentIdentity.id}&time=${formattedTime}`);
                     const result = await response.json();
                     const infoBox = document.getElementById('squad-next-station');
@@ -156,7 +155,6 @@ $squads = range(1, 8);
                             </div>
                         `;
                         
-                        // 更新地圖座標
                         if (task.lat && task.lng) {
                             const latLng = [parseFloat(task.lat), parseFloat(task.lng)];
                             map.setView(latLng, 18);
@@ -170,14 +168,13 @@ $squads = range(1, 8);
                     }
                 } 
                 else if (currentIdentity.type === 'station') {
-                    // --- 關主視角資料 ---
                     const response = await fetch(`api.php?action=get_station_schedule&station_id=${currentIdentity.id}&time=${formattedTime}`);
                     const result = await response.json();
                     const incomingBox = document.getElementById('station-incoming');
                     
                     if (result.status === 'success') {
                         const task = result.data;
-                        currentTargetSquad = task.squad_id; // 綁定給 Delay 按鈕使用
+                        currentTargetSquad = task.squad_id; 
                         incomingBox.innerHTML = `
                             即將抵達：<span class="font-bold text-green-700 text-xl">${task.squad_id}</span><br>
                             <span class="text-sm text-gray-500">${task.start_time.substring(11,16)} ~ ${task.end_time.substring(11,16)}</span>
@@ -202,7 +199,7 @@ $squads = range(1, 8);
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         sender: currentIdentity.name,
-                        target_squad: currentTargetSquad, // 精準鎖定當前查詢到的下一小隊
+                        target_squad: currentTargetSquad, 
                         message: `${currentIdentity.name} 現場微調中，${currentTargetSquad}請稍候再前往。`
                     })
                 });
@@ -212,38 +209,49 @@ $squads = range(1, 8);
             }
         }
 
-        // ================= SSE 接收即時通知 =================
-        const sse = new EventSource('api.php?action=sse');
-        sse.onmessage = function(event) {
-            const data = JSON.parse(event.data);
-            
-            // 場控視角：接收所有廣播並渲染
-            if (currentIdentity.type === 'coordinator') {
-                const logList = document.getElementById('global-logs');
-                if (logList.innerHTML.includes('等待系統通知')) {
-                    logList.innerHTML = '';
+        // ================= 輪詢 (Polling) 接收即時通知 =================
+        async function pollNotifications() {
+            if (!currentIdentity.type) return; 
+
+            try {
+                const response = await fetch(`api.php?action=get_notifications&last_id=${lastNotificationId}`);
+                const result = await response.json();
+                
+                if (result.status === 'success' && result.data.length > 0) {
+                    result.data.forEach(data => {
+                        lastNotificationId = data.id; 
+                        
+                        // 場控視角：接收所有廣播並渲染
+                        if (currentIdentity.type === 'coordinator') {
+                            const logList = document.getElementById('global-logs');
+                            if (logList.innerHTML.includes('等待系統通知')) {
+                                logList.innerHTML = '';
+                            }
+                            const newLog = `
+                                <li class="p-2 bg-white border-l-4 border-red-500 shadow-sm rounded mb-2">
+                                    <div class="text-xs text-gray-500 mb-1">${data.created_at}</div>
+                                    <div><span class="font-bold text-gray-800">${data.sender}</span> 通知 <span class="text-blue-600 font-medium">${data.target_squad}</span>：${data.message}</div>
+                                </li>`;
+                            logList.insertAdjacentHTML('afterbegin', newLog); 
+                        }
+                        
+                        // 小隊視角：只顯示針對該小隊或是全體的通知
+                        if (currentIdentity.type === 'squad') {
+                            if (data.target_squad === currentIdentity.name || data.target_squad === '全體') {
+                                const alertBox = document.getElementById('squad-notifications');
+                                alertBox.innerText = `🚨 ${data.sender} 通知：${data.message}`;
+                                alertBox.classList.remove('hidden');
+                            }
+                        }
+                    });
                 }
-                const newLog = `
-                    <li class="p-2 bg-white border-l-4 border-red-500 shadow-sm rounded">
-                        <div class="text-xs text-gray-500 mb-1">${data.created_at}</div>
-                        <div><span class="font-bold text-gray-800">${data.sender}</span> 通知 <span class="text-blue-600 font-medium">${data.target_squad}</span>：${data.message}</div>
-                    </li>`;
-                logList.innerHTML = newLog + logList.innerHTML;
+            } catch (error) {
+                console.warn("通知同步延遲，將於下次重試。");
             }
-            
-            // 小隊視角：只顯示針對該小隊或是全體的通知
-            if (currentIdentity.type === 'squad') {
-                if (data.target_squad === currentIdentity.name || data.target_squad === '全體') {
-                    const alertBox = document.getElementById('squad-notifications');
-                    alertBox.innerText = `🚨 ${data.sender} 通知：${data.message}`;
-                    alertBox.classList.remove('hidden');
-                }
-            }
-        };
-        
-        sse.onerror = function() {
-            console.error("SSE 連線狀態異常或正在重新連線...");
-        };
+        }
+
+        // 啟動定時器，每 5 秒執行一次查詢
+        setInterval(pollNotifications, 5000);
     </script>
 </body>
 </html>
