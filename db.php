@@ -1,7 +1,16 @@
 <?php
 // db.php
-// 將原本的 __DIR__ . '/camp_database.sqlite' 更改為：
-$db_file = '/app/data/camp_database.sqlite';
+
+// 使用相對路徑 __DIR__，並指定一個專屬的 data 資料夾
+// 在 Railway 預設環境中，__DIR__ 通常會是 /app，所以這會對應到 /app/data
+$db_dir = __DIR__ . '/data';
+$db_file = $db_dir . '/camp_database.sqlite';
+
+// 【關鍵修正】檢查資料夾是否存在，若無則以最高權限建立
+if (!is_dir($db_dir)) {
+    mkdir($db_dir, 0777, true);
+}
+
 $is_new = !file_exists($db_file);
 
 try {
@@ -17,20 +26,13 @@ try {
             );
             CREATE TABLE IF NOT EXISTS schedules (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                squad_id TEXT, station_id INTEGER, start_time TEXT
+                squad_id TEXT, station_id INTEGER, start_time TEXT, end_time TEXT
             );
             CREATE TABLE IF NOT EXISTS notifications (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 sender TEXT, target_squad TEXT, message TEXT, 
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
-        ");
-        
-        // 寫入安康農場與標本關測試資料
-        $pdo->exec("
-            INSERT INTO stations (name, lat, lng, type) VALUES 
-            ('標本講解關', 25.017, 121.539, 'indoor'),
-            ('安康農場野外採集', 24.954, 121.514, 'outdoor');
         ");
     }
 } catch (PDOException $e) {
