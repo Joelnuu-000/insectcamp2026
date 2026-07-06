@@ -8,7 +8,6 @@ $action = $_GET['action'] ?? '';
 // ==========================================
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_schedule') {
     $squad_id = $_GET['squad_id'] ?? '';
-    // 若有傳入模擬時間則使用，否則抓伺服器當前時間
     $current_time = $_GET['time'] ?? date('Y-m-d H:i:s'); 
     
     $stmt = $pdo->prepare("
@@ -25,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_schedule') {
     if ($task) {
         echo json_encode(['status' => 'success', 'data' => $task]);
     } else {
-        echo json_encode(['status' => 'empty', 'message' => '目前無任務或營隊已結束']);
+        echo json_encode(['status' => 'empty', 'message' => '目前無任務或已過營業時間']);
     }
     exit;
 }
@@ -67,10 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'notify') {
 }
 
 // ==========================================
-// 4. SSE 端點：持續推播最新通知給前端
-// ==========================================
-// ==========================================
-// 4. 輪詢端點：獲取最新通知 (取代 SSE)
+// 4. 輪詢端點：獲取最新通知 (完全取代之前的 SSE)
 // ==========================================
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_notifications') {
     $last_id = isset($_GET['last_id']) ? intval($_GET['last_id']) : 0;
