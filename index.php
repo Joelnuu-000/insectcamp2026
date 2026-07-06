@@ -21,18 +21,8 @@ $squads = range(1, 8);
 <body class="bg-gray-100 p-4">
 
     <div id="app" class="max-w-md mx-auto bg-white rounded-xl shadow-md overflow-hidden p-6">
-        <h1 class="text-2xl font-bold mb-4 text-center text-indigo-600">營隊即時連線系統</h1>
+        <h1 class="text-2xl font-bold mb-6 text-center text-indigo-600">營隊即時連線系統</h1>
         
-        <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm shadow-inner">
-            <label class="font-bold text-blue-800 block mb-1">⏳ 系統時間模擬 (測試用)</label>
-            <div class="flex gap-2">
-                <input type="datetime-local" id="sim-time" value="2026-07-06T14:05" class="p-1 border border-blue-300 rounded w-full bg-white">
-                <button onclick="fetchSchedule()" class="bg-blue-600 text-white px-4 py-1 rounded hover:bg-blue-700 transition font-medium">刷新</button>
-            </div>
-        </div>
-        
-        <hr class="my-4 border-gray-200">
-
         <select id="role-selector" class="w-full p-2 border border-gray-300 rounded-lg mb-4 bg-gray-50 text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500" onchange="switchView(this.value, this.options[this.selectedIndex].text)">
             <option value="">請選擇您的身份...</option>
             
@@ -58,7 +48,7 @@ $squads = range(1, 8);
                 <h2 class="text-xl font-bold" id="squad-title">小隊任務</h2>
             </div>
             <div class="border border-blue-200 border-t-0 rounded-b-lg p-3 mb-4 bg-blue-50">
-                <p class="text-base text-gray-700 leading-relaxed" id="squad-next-station">請點擊上方刷新獲取任務...</p>
+                <p class="text-base text-gray-700 leading-relaxed" id="squad-next-station">任務讀取中...</p>
             </div>
             
             <div id="map" class="h-64 w-full bg-gray-200 rounded-lg shadow-sm border border-gray-300 mb-4 z-0"></div>
@@ -70,7 +60,7 @@ $squads = range(1, 8);
                 <h2 class="text-xl font-bold" id="station-title">關主控制台</h2>
             </div>
             <div class="border border-green-200 border-t-0 rounded-b-lg p-4 mb-4 bg-green-50 text-center">
-                <p class="text-lg font-medium text-green-800" id="station-incoming">準備接待小隊中...</p>
+                <p class="text-lg font-medium text-green-800" id="station-incoming">任務讀取中...</p>
             </div>
             
             <button onclick="notifyDelay()" class="w-full bg-yellow-500 text-white p-3 rounded-lg font-bold shadow hover:bg-yellow-600 transition flex justify-center items-center gap-2">
@@ -93,7 +83,7 @@ $squads = range(1, 8);
         let marker = null;
         let currentIdentity = { type: '', id: '', name: '' };
         let currentTargetSquad = '全體'; 
-        let lastNotificationId = 0; // 記錄前端目前收到的最新通知 ID
+        let lastNotificationId = 0; 
 
         // ================= UI 視角切換與初始化 =================
         function switchView(roleValue, roleText) {
@@ -129,16 +119,14 @@ $squads = range(1, 8);
             }
         }
 
-        // ================= 獲取行程 API =================
+        // ================= 獲取正式行程 API =================
         async function fetchSchedule() {
-            if (currentIdentity.type === 'coordinator') return;
-            
-            const simTimeInput = document.getElementById('sim-time').value;
-            const formattedTime = simTimeInput.replace('T', ' ') + ':00';
+            if (currentIdentity.type === 'coordinator' || !currentIdentity.type) return;
             
             try {
                 if (currentIdentity.type === 'squad') {
-                    const response = await fetch(`api.php?action=get_schedule&squad_id=${currentIdentity.id}&time=${formattedTime}`);
+                    // 已移除時間參數，後端將自動採用系統當前時間
+                    const response = await fetch(`api.php?action=get_schedule&squad_id=${currentIdentity.id}`);
                     const result = await response.json();
                     const infoBox = document.getElementById('squad-next-station');
                     
@@ -146,7 +134,7 @@ $squads = range(1, 8);
                         const task = result.data;
                         infoBox.innerHTML = `
                             <div class="flex items-center gap-2 mb-1">
-                                <span class="bg-blue-200 text-blue-800 text-xs px-2 py-1 rounded font-bold">目標</span>
+                                <span class="bg-blue-200 text-blue-800 text-xs px-2 py-1 rounded font-bold">目前任務</span>
                                 <span class="font-bold text-gray-900">${task.name}</span>
                             </div>
                             <div class="flex items-center gap-2">
@@ -168,7 +156,7 @@ $squads = range(1, 8);
                     }
                 } 
                 else if (currentIdentity.type === 'station') {
-                    const response = await fetch(`api.php?action=get_station_schedule&station_id=${currentIdentity.id}&time=${formattedTime}`);
+                    const response = await fetch(`api.php?action=get_station_schedule&station_id=${currentIdentity.id}`);
                     const result = await response.json();
                     const incomingBox = document.getElementById('station-incoming');
                     
@@ -176,7 +164,7 @@ $squads = range(1, 8);
                         const task = result.data;
                         currentTargetSquad = task.squad_id; 
                         incomingBox.innerHTML = `
-                            即將抵達：<span class="font-bold text-green-700 text-xl">${task.squad_id}</span><br>
+                            目前接待：<span class="font-bold text-green-700 text-xl">${task.squad_id}</span><br>
                             <span class="text-sm text-gray-500">${task.start_time.substring(11,16)} ~ ${task.end_time.substring(11,16)}</span>
                         `;
                     } else {
@@ -221,7 +209,6 @@ $squads = range(1, 8);
                     result.data.forEach(data => {
                         lastNotificationId = data.id; 
                         
-                        // 場控視角：接收所有廣播並渲染
                         if (currentIdentity.type === 'coordinator') {
                             const logList = document.getElementById('global-logs');
                             if (logList.innerHTML.includes('等待系統通知')) {
@@ -235,7 +222,6 @@ $squads = range(1, 8);
                             logList.insertAdjacentHTML('afterbegin', newLog); 
                         }
                         
-                        // 小隊視角：只顯示針對該小隊或是全體的通知
                         if (currentIdentity.type === 'squad') {
                             if (data.target_squad === currentIdentity.name || data.target_squad === '全體') {
                                 const alertBox = document.getElementById('squad-notifications');
@@ -250,8 +236,11 @@ $squads = range(1, 8);
             }
         }
 
-        // 啟動定時器，每 5 秒執行一次查詢
+        // ================= 背景自動更新排程機制 =================
+        // 推播每 5 秒同步一次
         setInterval(pollNotifications, 5000);
+        // 行程表每 30 秒同步一次 (時間到了自動跳下一關)
+        setInterval(fetchSchedule, 30000);
     </script>
 </body>
 </html>
