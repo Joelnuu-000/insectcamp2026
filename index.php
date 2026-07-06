@@ -204,7 +204,7 @@ $squads = range(1, 8);
             if(currentIdentity.type !== 'station') return;
             
             try {
-                await fetch('api.php?action=notify', {
+                const response = await fetch('api.php?action=notify', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -213,9 +213,16 @@ $squads = range(1, 8);
                         message: `${currentIdentity.name} 現場微調中，${currentTargetSquad}請稍候再前往。`
                     })
                 });
-                alert(`已成功發送 Delay 通知給 ${currentTargetSquad} 與場控總部！`);
+                const result = await response.json();
+                
+                // 【關鍵修復】確實收到伺服器成功回應才跳通知
+                if(result.status === 'success') {
+                    alert(`已成功發送 Delay 通知給 ${currentTargetSquad} 與場控總部！`);
+                } else {
+                    alert('伺服器沒收到，請再點一次。');
+                }
             } catch (error) {
-                alert('發送失敗，請重試。');
+                alert('發送失敗，請確認網路狀態。');
             }
         }
 
@@ -224,7 +231,9 @@ $squads = range(1, 8);
             if (!currentIdentity.type) return; 
 
             try {
-                const response = await fetch(`api.php?action=get_notifications&last_id=${lastNotificationId}`);
+                // 【關鍵修復】在網址後面加上隨機時間戳 &t=...，徹底防堵瀏覽器快取
+                const noCacheUrl = `api.php?action=get_notifications&last_id=${lastNotificationId}&t=${new Date().getTime()}`;
+                const response = await fetch(noCacheUrl);
                 const result = await response.json();
                 
                 if (result.status === 'success' && result.data.length > 0) {
@@ -245,6 +254,7 @@ $squads = range(1, 8);
                         }
                         
                         if (currentIdentity.type === 'squad') {
+                            // 判斷推播對象是不是自己這隊，或是全體廣播
                             if (data.target_squad === currentIdentity.name || data.target_squad === '全體') {
                                 const alertBox = document.getElementById('squad-notifications');
                                 alertBox.innerText = `🚨 ${data.sender} 通知：${data.message}`;
@@ -257,7 +267,6 @@ $squads = range(1, 8);
                 console.warn("通知同步延遲，將於下次重試。");
             }
         }
-
         // ================= 背景自動更新排程機制 =================
         // 更新時鐘顯示，每 1 秒跑一次
         setInterval(getDeviceTime, 1000);

@@ -65,10 +65,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'notify') {
     exit;
 }
 
+
 // ==========================================
 // 4. 輪詢端點：獲取最新通知 (完全取代之前的 SSE)
 // ==========================================
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_notifications') {
+    // 【關鍵修復】告訴瀏覽器絕對不要快取這個請求，每次都要去資料庫重抓
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
+
     $last_id = isset($_GET['last_id']) ? intval($_GET['last_id']) : 0;
     
     $stmt = $pdo->prepare("SELECT * FROM notifications WHERE id > ? ORDER BY id ASC");
