@@ -44,8 +44,9 @@ $squads = range(1, 8);
         </select>
 
         <div id="view-squad" class="hidden">
-            <div class="bg-blue-600 text-white p-3 rounded-t-lg">
+            <div class="bg-blue-600 text-white p-3 rounded-t-lg flex justify-between items-center">
                 <h2 class="text-xl font-bold" id="squad-title">小隊任務</h2>
+                <span id="squad-clock" class="text-xs font-mono bg-blue-800 px-2 py-1 rounded">--:--:--</span>
             </div>
             <div class="border border-blue-200 border-t-0 rounded-b-lg p-3 mb-4 bg-blue-50">
                 <p class="text-base text-gray-700 leading-relaxed" id="squad-next-station">任務讀取中...</p>
@@ -56,8 +57,9 @@ $squads = range(1, 8);
         </div>
 
         <div id="view-station" class="hidden">
-            <div class="bg-green-600 text-white p-3 rounded-t-lg">
+            <div class="bg-green-600 text-white p-3 rounded-t-lg flex justify-between items-center">
                 <h2 class="text-xl font-bold" id="station-title">關主控制台</h2>
+                <span id="station-clock" class="text-xs font-mono bg-green-800 px-2 py-1 rounded">--:--:--</span>
             </div>
             <div class="border border-green-200 border-t-0 rounded-b-lg p-4 mb-4 bg-green-50 text-center">
                 <p class="text-lg font-medium text-green-800" id="station-incoming">任務讀取中...</p>
@@ -84,6 +86,23 @@ $squads = range(1, 8);
         let currentIdentity = { type: '', id: '', name: '' };
         let currentTargetSquad = '全體'; 
         let lastNotificationId = 0; 
+
+        // ================= 取得手機精準時間 (格式化) =================
+        function getDeviceTime() {
+            const now = new Date();
+            const y = now.getFullYear();
+            const m = String(now.getMonth() + 1).padStart(2, '0');
+            const d = String(now.getDate()).padStart(2, '0');
+            const h = String(now.getHours()).padStart(2, '0');
+            const min = String(now.getMinutes()).padStart(2, '0');
+            const s = String(now.getSeconds()).padStart(2, '0');
+            
+            // 更新畫面的時鐘顯示
+            if(document.getElementById('squad-clock')) document.getElementById('squad-clock').innerText = `${h}:${min}:${s}`;
+            if(document.getElementById('station-clock')) document.getElementById('station-clock').innerText = `${h}:${min}:${s}`;
+            
+            return `${y}-${m}-${d} ${h}:${min}:${s}`;
+        }
 
         // ================= UI 視角切換與初始化 =================
         function switchView(roleValue, roleText) {
@@ -123,10 +142,13 @@ $squads = range(1, 8);
         async function fetchSchedule() {
             if (currentIdentity.type === 'coordinator' || !currentIdentity.type) return;
             
+            // 每次發送請求前，獲取手機當下時間
+            const deviceTime = getDeviceTime();
+
             try {
                 if (currentIdentity.type === 'squad') {
-                    // 已移除時間參數，後端將自動採用系統當前時間
-                    const response = await fetch(`api.php?action=get_schedule&squad_id=${currentIdentity.id}`);
+                    // 將手機時間附加在網址參數後方傳給後端
+                    const response = await fetch(`api.php?action=get_schedule&squad_id=${currentIdentity.id}&time=${deviceTime}`);
                     const result = await response.json();
                     const infoBox = document.getElementById('squad-next-station');
                     
@@ -138,7 +160,7 @@ $squads = range(1, 8);
                                 <span class="font-bold text-gray-900">${task.name}</span>
                             </div>
                             <div class="flex items-center gap-2">
-                                <span class="bg-gray-200 text-gray-700 text-xs px-2 py-1 rounded font-bold">時間</span>
+                                <span class="bg-gray-200 text-gray-700 text-xs px-2 py-1 rounded font-bold">時段</span>
                                 <span class="text-gray-700">${task.start_time.substring(11,16)} ~ ${task.end_time.substring(11,16)}</span>
                             </div>
                         `;
@@ -156,7 +178,7 @@ $squads = range(1, 8);
                     }
                 } 
                 else if (currentIdentity.type === 'station') {
-                    const response = await fetch(`api.php?action=get_station_schedule&station_id=${currentIdentity.id}`);
+                    const response = await fetch(`api.php?action=get_station_schedule&station_id=${currentIdentity.id}&time=${deviceTime}`);
                     const result = await response.json();
                     const incomingBox = document.getElementById('station-incoming');
                     
@@ -237,10 +259,12 @@ $squads = range(1, 8);
         }
 
         // ================= 背景自動更新排程機制 =================
+        // 更新時鐘顯示，每 1 秒跑一次
+        setInterval(getDeviceTime, 1000);
         // 推播每 5 秒同步一次
         setInterval(pollNotifications, 5000);
-        // 行程表每 30 秒同步一次 (時間到了自動跳下一關)
-        setInterval(fetchSchedule, 30000);
+        // 行程表每 15 秒同步一次 (縮短秒數讓換關更即時)
+        setInterval(fetchSchedule, 15000);
     </script>
 </body>
 </html>
